@@ -11,6 +11,7 @@ import pickle
 CONFIG_PREPEND_TRACKNUM = True
 CONFIG_SPLIT_IN_ALBUM_DIRECTORIES = True
 CONFIG_VALID_NUMBER_DELIMETERS = [',','_','/',';']
+CONFIG_WRITE_PLAYLIST = False
 
 def split_by_any(s, delimiters):
     pattern = f"[{re.escape(''.join(delimiters))}]"
@@ -65,7 +66,13 @@ def sanitize_path(path_str):
     sanitized = re.sub(invalid_chars, '_', path_str)
     return sanitized.strip()
 
+files_processed = 0
+
 def sort_file(fp, op):
+    global files_processed
+    files_processed += 1
+    if (files_processed%100)==0:
+        logger.warning(f'Processed {files_processed} files!')
     md = extract_metadata(fp)
     logger.debug(f'Sorting music {fp} ({md['title']} by {md['artist']})')
     Artist = md['albumartist']
@@ -91,27 +98,49 @@ def sort_file(fp, op):
     else:
         tfn = sanitize_path(Title)
     if CONFIG_SPLIT_IN_ALBUM_DIRECTORIES:
-        nfp = op / artist_path / album_path / (tfn+fp.suffix)
+        nfp = Path(artist_path) / album_path / (tfn+fp.suffix)
     else:
-        nfp = op / artist_path / (tfn+fp.suffix)
+        nfp = Path(artist_path) / (tfn+fp.suffix)
     logger.info(f"Sorting file {fp}...")
     if not check_add_entry(artist_path,album_path,tfn,nfp):
         logger.warning(f"SKIPPING FILE {fp}: ALREADY EXISTS AT {entries[(artist_path,album_path,tfn)]}")
+        return entries[(artist_path,album_path,tfn)]
     else:
         nfp.parent.mkdir(parents=True,exist_ok=True)
-        shutil.copy2(fp,nfp)
+        shutil.copy2(fp,op / nfp)
         logger.debug(f"Copying: {fp} -> {nfp}")
+        return nfp
 
 
+def make_unique_fname(fn):
+    path = Path(fn)
+    path.parent.mkdir(parents=True,exist_ok=True)
+    if not path.exists():
+        return path
+    i=1
+    while True:
+        new_path = path.with_stem(f"{path.stem}({i})")
+        if not new_path.exists():
+            return new_path
 
 def sort_dir(id,od):
-    op = Path(od)
+    od = Path(od)
+    id = Path(id)
+    if CONFIG_WRITE_PLAYLIST:
+        nfn = od/'Playlists'/f'{id.name}.m3u'
+        nfnu = make_unique_fname(nfn)
+        plf = open(nfnu,'w',encoding='utf-8')
+        plf.write('#EXTM3U\n')
     for filepath in Path(id).rglob("*"):
         if not filepath.is_file():
             continue
         if filepath.suffix not in MUSIC_FILE_SUFFIXES:
             continue
-        sort_file(filepath,op)
+        nfp = sort_file(filepath,od)
+        if CONFIG_WRITE_PLAYLIST:
+            plf.write(str(Path('../')/nfp)+'\n')
+    if CONFIG_WRITE_PLAYLIST:
+        plf.close()
         
 
 def setup_logs():
@@ -145,9 +174,11 @@ if __name__=="__main__":
     parser.add_argument('--prepend-track-number',dest='prepend_tracknum',required=False,action='store_true',help="If included, will prepend the track number and disc number before the name of each file (when available)")
     parser.add_argument('--dont-split-albums',dest='split_album',required=False,action='store_false',help="If included, will dump all music files in the artist directory, not in an album subdirectory")
     parser.add_argument('--entries','-e',dest='entries_file',type=Path,default=Path('entries.pkl'),help="The path to the entries .pkl file that stores the current sorted files (default: 'entries.pkl')")
+    parser.add_argument('--create-playlist','-l',dest='playlist',required=False,action='store_true',help="If included, will create a text file, containing the paths to the places where the sorted music files are stored, for every song in the input directory and subdirectory, each in its own line")
     args = parser.parse_args()
     CONFIG_PREPEND_TRACKNUM = args.prepend_tracknum
     CONFIG_SPLIT_IN_ALBUM_DIRECTORIES = args.split_album
+    CONFIG_WRITE_PLAYLIST = args.playlist
     entriespath = args.entries_file.resolve()
     if entriespath.is_dir():
         logger.critical("ENTRIES FILEPATH IS A DIRECTORY! QUITTING!")
