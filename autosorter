@@ -4,6 +4,7 @@ from pathlib import Path
 import logging
 import re
 from mutagen import File
+import traceback
 import shutil
 import re
 import pickle
@@ -106,7 +107,7 @@ def sort_file(fp, op):
         logger.warning(f"SKIPPING FILE {fp}: ALREADY EXISTS AT {entries[(artist_path,album_path,tfn)]}")
         return entries[(artist_path,album_path,tfn)]
     else:
-        nfp.parent.mkdir(parents=True,exist_ok=True)
+        (op/nfp).parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(fp,op / nfp)
         logger.debug(f"Copying: {fp} -> {nfp}")
         return nfp
