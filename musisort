@@ -13,6 +13,9 @@ CONFIG_PREPEND_TRACKNUM = True
 CONFIG_SPLIT_IN_ALBUM_DIRECTORIES = True
 CONFIG_VALID_NUMBER_DELIMETERS = [',','_','/',';']
 CONFIG_WRITE_PLAYLIST = False
+CONFIG_LEVEL_NEW_FILE_ALERT = logging.DEBUG
+CONFIG_LEVEL_DUPLICATE_FILE_ALERT = logging.WARNING
+CONFIG_OUTPUT_DIRECTORY = './'
 
 def split_by_any(s, delimiters):
     pattern = f"[{re.escape(''.join(delimiters))}]"
@@ -104,10 +107,12 @@ def sort_file(fp, op):
         nfp = Path(artist_path) / (tfn+fp.suffix)
     logger.info(f"Sorting file {fp}...")
     if not check_add_entry(artist_path,album_path,tfn,nfp):
-        logger.warning(f"SKIPPING FILE {fp}: ALREADY EXISTS AT {entries[(artist_path,album_path,tfn)]}")
+        logger.log(CONFIG_LEVEL_DUPLICATE_FILE_ALERT,f"Skipping duplicate file {fp}...")
+        #logger.log(CONFIG_LEVEL_DUPLICATE_FILE_ALERT, f"Already exists at {entries[(artist_path,album_path,tfn)]}")
         return entries[(artist_path,album_path,tfn)]
     else:
         (op/nfp).parent.mkdir(parents=True,exist_ok=True)
+        logger.log(CONFIG_LEVEL_NEW_FILE_ALERT,f"Found new file {fp}!")
         shutil.copy2(fp,op / nfp)
         logger.debug(f"Copying: {fp} -> {nfp}")
         return nfp
@@ -123,6 +128,7 @@ def make_unique_fname(fn):
         new_path = path.with_stem(f"{path.stem}({i})")
         if not new_path.exists():
             return new_path
+        i+=1
 
 def sort_dir(id,od):
     od = Path(od)
@@ -147,7 +153,7 @@ def sort_dir(id,od):
 def setup_logs():
     global logger
     formatstr='[%(asctime)s - %(levelname)s] - %(message)s'
-    logger = logging.getLogger('autosorter')
+    logger = logging.getLogger('musisort')
     logger.setLevel(logging.DEBUG)
 
     # Create console handler with a lower level (e.g., INFO)
@@ -155,7 +161,7 @@ def setup_logs():
     console_handler.setLevel(logging.WARN)  # Console logs at INFO level
 
     # Create file handler with a higher level (e.g., DEBUG)
-    file_handler = logging.FileHandler('autosorter.log')
+    file_handler = logging.FileHandler('./musisort.log')
     file_handler.setLevel(logging.DEBUG)  # File logs at DEBUG level
 
     formatter = logging.Formatter(formatstr)
@@ -168,19 +174,24 @@ def setup_logs():
     logger.info('Starting!')
 
 if __name__=="__main__":
-    setup_logs()
-    parser = argparse.ArgumentParser(description="Music File Autosorter")
+    parser = argparse.ArgumentParser(description="MUSISORT: Music File Automatic Sorter")
     parser.add_argument('--input','-i',dest='input',type=Path,required=True,help="Input directory of music files")
     parser.add_argument('--output','-o',dest='output',type=Path,required=True,help="Output directory of sorted music files")
     parser.add_argument('--prepend-track-number',dest='prepend_tracknum',required=False,action='store_true',help="If included, will prepend the track number and disc number before the name of each file (when available)")
     parser.add_argument('--dont-split-albums',dest='split_album',required=False,action='store_false',help="If included, will dump all music files in the artist directory, not in an album subdirectory")
-    parser.add_argument('--entries','-e',dest='entries_file',type=Path,default=Path('entries.pkl'),help="The path to the entries .pkl file that stores the current sorted files (default: 'entries.pkl')")
-    parser.add_argument('--create-playlist','-l',dest='playlist',required=False,action='store_true',help="If included, will create a text file, containing the paths to the places where the sorted music files are stored, for every song in the input directory and subdirectory, each in its own line")
+    parser.add_argument('--entries','-e',dest='entries_file',type=str,default='entries.pkl',help="The path to the entries .pkl file that stores the current sorted files (default: 'entries.pkl')")
+    parser.add_argument('--create-playlist','-l',dest='playlist',required=False,action='store_true',help="If included, will create a text file, containing the paths to the places where the sorted music files are stored, for every song in the input directory and subdirectory, each in its own line, in output/Playlist/(name of input folder)")
+    parser.add_argument('--warn-new',dest='warnnew',required=False,action='store_true',help="If included, will log warnings for all new files detected")
+    parser.add_argument('--warn-duplicate',dest='warndup',required=False,action='store_true',help="If included, will log warningd for all files detected that are already stored and indexed in entries")
     args = parser.parse_args()
     CONFIG_PREPEND_TRACKNUM = args.prepend_tracknum
     CONFIG_SPLIT_IN_ALBUM_DIRECTORIES = args.split_album
     CONFIG_WRITE_PLAYLIST = args.playlist
-    entriespath = args.entries_file.resolve()
+    CONFIG_LEVEL_DUPLICATE_FILE_ALERT = logging.WARNING if args.warndup else logging.DEBUG
+    CONFIG_LEVEL_NEW_FILE_ALERT = logging.WARNING if args.warnnew else logging.DEBUG
+    CONFIG_OUTPUT_DIRECTORY = Path(args.output)
+    setup_logs()
+    entriespath = Path(args.entries_file).resolve() if '/' in str(args.entries_file) else Path(args.output) / args.entries_file
     if entriespath.is_dir():
         logger.critical("ENTRIES FILEPATH IS A DIRECTORY! QUITTING!")
         exit(1)
