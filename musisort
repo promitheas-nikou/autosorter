@@ -74,9 +74,12 @@ def check_add_entry(art,alb,tit,v):
 
 def sanitize_path(path_str):
     # Define a regex pattern for invalid characters in paths
-    invalid_chars = r'[<>:"/\\\|\*\x00-\x1F]'
+    invalid_chars = r'[\?<>:"/\\\|\*\x00-\x1F]'
     sanitized = re.sub(invalid_chars, '_', path_str)
-    return sanitized.strip()
+    r = sanitized.strip()
+    if r[-1]=='.':
+        return r+'_'
+    return r
 
 files_processed = 0
 
